@@ -1,0 +1,31 @@
+# Tiny run on fake data: checks that everything is wired up correctly.
+# Takes about a minute and needs no download.
+
+run_name: smoke
+
+data:
+  dataset: synthetic
+  data_dir: ./data
+  alpha: 0.5
+  min_samples_per_node: 20
+
+federation:
+  num_nodes: 5
+  nodes_per_round: 3
+  num_rounds: 3
+
+training:
+  local_epochs: 1
+  batch_size: 32
+  learning_rate: 0.01
+  device: cpu
+
+methods:
+  selection: random
+  scoring: none
+  aggregation: fedavg
+
+simulation:
+  cpus_per_node: 1
+
+seed: 0

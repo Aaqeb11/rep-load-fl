@@ -1,0 +1,31 @@
+# Step 1 baseline: FedAvg on CIFAR-10 with a non-IID (Dirichlet) split.
+# Every experiment is one YAML file, so a run can always be repeated exactly.
+
+run_name: baseline
+
+data:
+  dataset: cifar10        # "cifar10" or "synthetic" (fake data for quick tests)
+  data_dir: ./data        # where CIFAR-10 is downloaded
+  alpha: 0.5              # Dirichlet alpha: smaller = more uneven (non-IID) data
+  min_samples_per_node: 20
+
+federation:
+  num_nodes: 20           # number of simulated fog nodes
+  nodes_per_round: 10     # how many nodes train each round
+  num_rounds: 50
+
+training:
+  local_epochs: 1
+  batch_size: 32
+  learning_rate: 0.01
+  device: cpu             # "cpu", "mps" (Apple GPU) or "cuda"
+
+methods:
+  selection: random       # see src/bcfl/selection.py
+  scoring: none           # see src/bcfl/scoring.py
+  aggregation: fedavg     # see src/bcfl/aggregation.py
+
+simulation:
+  cpus_per_node: 1        # CPU cores given to each simulated node
+
+seed: 0
