@@ -1,9 +1,8 @@
+import numpy as np
 import torch
 
 from bcfl.aggregation import NodeUpdate, fedavg
 from bcfl.selection import random_selection
-
-import numpy as np
 
 
 def make_update(node_id, value, num_examples):
