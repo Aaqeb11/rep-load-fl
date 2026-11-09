@@ -14,7 +14,14 @@ can be swapped through the config file without touching this file.
 import time
 
 import numpy as np
-from flwr.app import ArrayRecord, ConfigRecord, Message, MessageType, MetricRecord, RecordDict
+from flwr.app import (
+    ArrayRecord,
+    ConfigRecord,
+    Message,
+    MessageType,
+    MetricRecord,
+    RecordDict,
+)
 from flwr.serverapp import Grid
 from flwr.serverapp.strategy import FedAvg
 

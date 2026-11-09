@@ -125,11 +125,3 @@ That's about 25 hours in total, run overnight in blocks. The main block alone an
 4. Free-riding: plain only, or plain + disguised (σ = 10⁻³)?
 5. On-off cycle: 10 honest / 5 attacking, synchronised?
 6. Is it acceptable to give Krum and trimmed mean the true attacker fraction?
-
-## References
-
-- Blanchard, El Mhamdi, Guerraoui, Stainer. *Machine Learning with Adversaries: Byzantine Tolerant Gradient Descent.* NeurIPS 2017. (Krum)
-- Yin, Chen, Ramchandran, Bartlett. *Byzantine-Robust Distributed Learning: Towards Optimal Statistical Rates.* ICML 2018. (Trimmed mean, median)
-- Tolpegin, Truex, Gursoy, Liu. *Data Poisoning Attacks Against Federated Learning Systems.* ESORICS 2020. (Label flipping in FL)
-- Fang, Cao, Jia, Gong. *Local Model Poisoning Attacks to Byzantine-Robust Federated Learning.* USENIX Security 2020. (Model poisoning against Krum and trimmed mean)
-- Lin, Du, Liu. *Free-riders in Federated Learning: Attacks and Defenses.* arXiv:1911.12560, 2019. (Plain and disguised free-riders)
