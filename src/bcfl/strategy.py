@@ -87,15 +87,14 @@ class RepLoadStrategy(FedAvg):
                 weights=reply.content["arrays"].to_torch_state_dict(),
                 num_examples=int(metrics["num-examples"]),
                 train_loss=float(metrics["train-loss"]),
+                train_seconds=float(metrics["train-seconds"]),
+                train_cpu_seconds=float(metrics["train-cpu-seconds"]),
             ))
 
         scores = self.score(updates, self.scoring_state)
         new_weights = self.aggregate(updates, scores)
 
+        self.recorder.record_training(server_round, updates)
         average_train_loss = sum(u.train_loss for u in updates) / len(updates)
-        self.recorder.record_training(
-            selected_partitions=[u.partition_id for u in updates],
-            train_loss=average_train_loss,
-        )
 
         return ArrayRecord(torch_state_dict=new_weights), MetricRecord({"train-loss": average_train_loss})

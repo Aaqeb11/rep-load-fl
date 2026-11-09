@@ -21,6 +21,15 @@ def group_name(run_dir):
     return re.sub(r"_seed\d+$", "", os.path.basename(os.path.normpath(run_dir)))
 
 
+def pretty_label(name, num_seeds):
+    """'baseline_alpha0.1' -> 'baseline, α = 0.1 (3 seeds)', easier to read in a report."""
+    match = re.search(r"^(.*)_alpha([\d.]+)$", name)
+    if match is None:
+        return f"{name} ({num_seeds} seeds)"
+    run_name, alpha = match.groups()
+    return f"{run_name}, α = {alpha} ({num_seeds} seeds)"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Plot accuracy curves.")
     parser.add_argument("run_dirs", nargs="+", help="Result folders containing rounds.csv")
@@ -41,13 +50,13 @@ def main():
     for name, runs in sorted(groups.items()):
         table = pd.concat(runs, axis=1)
         mean = table.mean(axis=1)
-        ax.plot(mean.index, mean.values, label=f"{name} ({len(runs)} seeds)")
+        ax.plot(mean.index, mean.values, label=pretty_label(name, len(runs)))
         if len(runs) > 1:
             ax.fill_between(mean.index, table.min(axis=1), table.max(axis=1), alpha=0.2)
 
     ax.set_xlabel("Round")
     ax.set_ylabel("Test accuracy")
-    ax.set_title("FedAvg test accuracy per round")
+    ax.set_title("Test accuracy per round\n(line = mean over seeds, band = min to max)", fontsize=10)
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
