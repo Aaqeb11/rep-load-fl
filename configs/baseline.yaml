@@ -12,7 +12,7 @@ data:
 federation:
   num_nodes: 20           # number of simulated fog nodes
   nodes_per_round: 10     # how many nodes train each round
-  num_rounds: 50
+  num_rounds: 100         # mentor: 100-150, so slow (alpha 0.1) and on-off runs can play out
 
 training:
   local_epochs: 1

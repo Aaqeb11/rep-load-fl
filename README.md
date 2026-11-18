@@ -30,7 +30,7 @@ pytest                    # unit tests
 # 1. Quick check on fake data (about a minute, no download)
 python scripts/run.py --config configs/smoke.yaml
 
-# 2. One real run: CIFAR-10, 20 nodes, 10 per round, 50 rounds
+# 2. One real run: CIFAR-10, 20 nodes, 10 per round, 100 rounds
 #    (downloads CIFAR-10 into ./data the first time, about 170 MB)
 python scripts/run.py --config configs/baseline.yaml
 
@@ -50,7 +50,8 @@ Each run writes to `results/<run_name>_alpha<α>_seed<s>/`:
 |---|---|
 | `config.yaml` | The exact settings used |
 | `split.json` | Samples of each class held by every node |
-| `rounds.csv` | Per round: test accuracy and loss, average training loss, selected nodes, round time |
+| `rounds.csv` | Per round: test accuracy and loss, average training loss, selected nodes, slowest node's training time, round time |
+| `node_rounds.csv` | Per node per round: samples used, training loss, wall-clock and CPU training time (input for the Step 3 workload model) |
 
 On an Apple Silicon Mac you can try `--set training.device=mps`. If it is slower or errors with many parallel nodes, stay on `cpu`.
 
@@ -60,7 +61,7 @@ On an Apple Silicon Mac you can try `--set training.device=mps`. If it is slower
 2. **Train** (`client_app.py`): each chosen node trains the current model on its own data.
 3. **Score** (`scoring.py`): the coordinator rates each update.
 4. **Aggregate** (`aggregation.py`): the updates are combined into the new global model.
-5. **Record** (`recorder.py`): the new model is tested and a row is written to `rounds.csv`.
+5. **Record** (`recorder.py`): the new model is tested; one row goes to `rounds.csv` and one row per trained node to `node_rounds.csv`.
 
 `strategy.py` is the Flower strategy that calls steps 1, 3 and 4. `server_app.py` and `client_app.py` are the coordinator and fog-node programs, and `scripts/run.py` starts the simulation.
 

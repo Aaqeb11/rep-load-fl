@@ -25,6 +25,8 @@ class NodeUpdate:
     weights: dict           # the trained model: {layer name: tensor}
     num_examples: int       # how many training samples the node used
     train_loss: float
+    train_seconds: float = 0.0       # wall-clock time the node spent training this round
+    train_cpu_seconds: float = 0.0   # CPU time it used (not inflated by other nodes sharing the CPU)
 
 
 def fedavg(updates, scores):
