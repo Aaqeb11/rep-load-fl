@@ -35,3 +35,21 @@ def test_trimmed_mean_with_no_trimming_is_the_plain_average():
     updates = [make_update(i, value) for i, value in enumerate([1.0, 2.0, 6.0])]
     new_weights, _ = trimmed_mean(updates, scores={}, settings={"trim_k": 0})
     assert torch.allclose(new_weights["layer"], torch.full((3,), 3.0))
+
+
+def test_krum_matches_the_worked_example():
+    # Squared distances to the 2 nearest neighbours (f = 1, n = 5):
+    # 1.05 has the smallest total (0.005), the attacker -10 the largest.
+    updates = [make_update(i, value) for i, value in enumerate([1.0, 1.1, 0.9, 1.05, -10.0])]
+    new_weights, influence = krum(updates, scores={}, settings={"krum_f": 1})
+    assert torch.allclose(new_weights["layer"], torch.full((3,), 1.05))
+    assert influence[3] == 1.0 and influence[4] == 0.0
+
+
+def test_trimmed_mean_cuts_k_from_each_end():
+    # k = 1: drop -50 (lowest) and 100 (highest), average 1, 2 and 6 -> 3.
+    updates = [make_update(i, value) for i, value in enumerate([1.0, 2.0, 6.0, 100.0, -50.0])]
+    new_weights, influence = trimmed_mean(updates, scores={}, settings={"trim_k": 1})
+    assert torch.allclose(new_weights["layer"], torch.full((3,), 3.0))
+    assert influence[3] == 0.0 and influence[4] == 0.0
+    assert abs(influence[0] - 1 / 3) < 1e-6

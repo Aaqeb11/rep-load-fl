@@ -18,6 +18,14 @@ To add a new aggregator, write a function with this shape and add it to AGGREGAT
 from dataclasses import dataclass
 
 import torch
+from flwr.app import ArrayRecord, RecordDict
+
+# Krum and trimmed mean: the maths comes from Flower's own, tested implementations
+# (flwr 1.42, pinned in requirements.txt). Flower ships them as whole strategies;
+# we call only the functions inside them, so our pipeline (selection -> scoring ->
+# aggregation, influence logging) stays the same for every method.
+from flwr.serverapp.strategy.fedtrimmedavg import trim_mean as flower_trim_mean
+from flwr.serverapp.strategy.multikrum import select_multikrum as flower_select_multikrum
 
 
 @dataclass
@@ -58,11 +66,6 @@ def fedavg(updates, scores, settings=None):
     return new_weights, influence
 
 
-def flatten(weights):
-    """Turn a model's weights into one long vector, so we can measure distances."""
-    return torch.cat([weights[name].float().flatten() for name in sorted(weights)])
-
-
 def krum(updates, scores, settings):
     """Krum (Blanchard et al., 2017): keep the ONE update that looks most "central".
 
@@ -72,24 +75,26 @@ def krum(updates, scores, settings):
 
     f = the number of attackers we expect among the n updates (settings["krum_f"]).
     Krum needs n > 2f + 2; if there are fewer updates, f is reduced to fit.
+
+    Flower does the scoring and picking (select_multikrum with 1 node to select
+    is plain Krum). We only translate our updates into Flower's format and back.
     """
     n = len(updates)
     f = min(settings["krum_f"], (n - 3) // 2)
-    neighbours = max(n - f - 2, 1)
+    f = max(f, 0)
 
-    vectors = [flatten(u.weights) for u in updates]
+    # Flower works on RecordDicts holding an ArrayRecord, like a node's reply.
+    contents = []
+    for update in updates:
+        contents.append(RecordDict({"arrays": ArrayRecord(torch_state_dict=update.weights)}))
 
-    totals = []
-    for i in range(n):
-        distances = []
-        for j in range(n):
-            if i != j:
-                distances.append(float(torch.sum((vectors[i] - vectors[j]) ** 2)))
-        distances.sort()
-        totals.append(sum(distances[:neighbours]))
+    selected = flower_select_multikrum(contents, num_malicious_nodes=f, num_nodes_to_select=1)
 
-    best = totals.index(min(totals))
-    chosen = updates[best]
+    # Find which of our updates Flower picked (same object it handed back).
+    chosen = None
+    for update, content in zip(updates, contents):
+        if content is selected[0]:
+            chosen = update
 
     new_weights = {name: tensor.float().clone() for name, tensor in chosen.weights.items()}
     influence = {u.node_id: (1.0 if u is chosen else 0.0) for u in updates}
@@ -102,34 +107,50 @@ def trimmed_mean(updates, scores, settings):
 
     An attacker's extreme values get trimmed away, one weight at a time.
     k = settings["trim_k"] values removed from EACH end (needs n > 2k).
+
+    Flower computes the trimmed average itself (trim_mean, as in FedTrimmedAvg).
+    Flower does not report WHICH values it kept, so influence is counted here.
     """
     n = len(updates)
     k = min(settings["trim_k"], (n - 1) // 2)
-    kept = n - 2 * k
 
-    node_ids = [u.node_id for u in updates]
-    kept_counts = torch.zeros(n)        # how often each node's value was kept
-    total_weights = 0
+    # Flower takes a fraction of the nodes to cut from each end, not a count.
+    # It cuts int(fraction * n) values. Adding 0.25 keeps a rounding error from
+    # turning 2.0 into 1.999... (which int() would make 1). Still below 0.5.
+    cut_fraction = (k + 0.25) / n if k > 0 else 0.0
 
     new_weights = {}
     for layer_name in updates[0].weights:
         # Stack the nodes' versions of this layer: shape [n, ...layer shape...]
         stacked = torch.stack([u.weights[layer_name].float() for u in updates])
+        averaged = flower_trim_mean(stacked.numpy(), cut_fraction)
+        new_weights[layer_name] = torch.from_numpy(averaged).float()
 
-        # Sort along the node axis, keep the middle part, average it.
-        sorted_values, order = torch.sort(stacked, dim=0)
-        middle = sorted_values[k:n - k]
-        new_weights[layer_name] = middle.mean(dim=0)
+    influence = trimmed_mean_influence(updates, k)
+    return new_weights, influence
 
-        # Bookkeeping for influence: which nodes' values survived the trimming?
-        kept_counts += torch.bincount(order[k:n - k].flatten(), minlength=n).float()
+
+def trimmed_mean_influence(updates, k):
+    """Each node's share of a trimmed-mean model.
+
+    For every weight, sort the n values, keep the middle n - 2k, and count whose
+    values were kept. Each kept value contributes 1 / (n - 2k) of that weight,
+    so a node's share is (its kept values) / ((n - 2k) * number of weights).
+    """
+    n = len(updates)
+    kept = n - 2 * k
+    kept_counts = torch.zeros(n)        # how often each node's value was kept
+    total_weights = 0
+
+    for layer_name in updates[0].weights:
+        stacked = torch.stack([u.weights[layer_name].float() for u in updates])
+        _, order = torch.sort(stacked, dim=0)       # order[i] = which node is i-th smallest
+        middle_nodes = order[k:n - k].flatten()
+        kept_counts += torch.bincount(middle_nodes, minlength=n).float()
         total_weights += stacked[0].numel()
 
-    # Each kept value contributes 1/kept of its weight, so a node's share of the
-    # model is (values of it that were kept) / (kept * number of weights).
     shares = kept_counts / (kept * total_weights)
-    influence = {node_ids[i]: float(shares[i]) for i in range(n)}
-    return new_weights, influence
+    return {updates[i].node_id: float(shares[i]) for i in range(n)}
 
 
 AGGREGATORS = {
