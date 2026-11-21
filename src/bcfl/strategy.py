@@ -48,6 +48,12 @@ class RepLoadStrategy(FedAvg):
         self.score = get_scorer(methods["scoring"])
         self.aggregate = get_aggregator(methods["aggregation"])
 
+        # Robust defences need to know how many attackers to expect per round.
+        # Mentor's choice: give them the TRUE attacker fraction (fair to the baselines),
+        # and use the same value in their no-attack runs so drops are comparable.
+        expected_attackers = round(methods.get("assumed_malicious_fraction", 0.2) * self.nodes_per_round)
+        self.aggregation_settings = {"krum_f": expected_attackers, "trim_k": expected_attackers}
+
         # Memory the scorer keeps between rounds (reputation history in Step 4).
         self.scoring_state = {}
 
@@ -96,12 +102,14 @@ class RepLoadStrategy(FedAvg):
                 train_loss=float(metrics["train-loss"]),
                 train_seconds=float(metrics["train-seconds"]),
                 train_cpu_seconds=float(metrics["train-cpu-seconds"]),
+                is_malicious=bool(metrics["is-malicious"]),
+                attacking=bool(metrics["attacking"]),
             ))
 
         scores = self.score(updates, self.scoring_state)
-        new_weights = self.aggregate(updates, scores)
+        new_weights, influence = self.aggregate(updates, scores, self.aggregation_settings)
 
-        self.recorder.record_training(server_round, updates)
+        self.recorder.record_training(server_round, updates, influence)
         average_train_loss = sum(u.train_loss for u in updates) / len(updates)
 
         return ArrayRecord(torch_state_dict=new_weights), MetricRecord({"train-loss": average_train_loss})
