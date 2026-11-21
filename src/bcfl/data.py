@@ -9,13 +9,22 @@ uneven across nodes (non-IID), we use a Dirichlet split:
   so each node sees only a few classes. Very uneven.
 - A large alpha (e.g. 100) means each class is shared almost equally,
   so every node sees every class. Close to IID.
+
+Datasets:
+- "edgeiiot":  Edge-IIoTset network traffic (15 classes), prepared once by
+               scripts/prepare_edgeiiot.py into .npy files
+- "cifar10":   images (10 classes), used for Step 1
+- "synthetic": fake image data for quick tests
 """
+
+import json
+import os
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset, TensorDataset
 
-NUM_CLASSES = 10
+NUM_CLASSES = 10   # for the image datasets (cifar10, synthetic)
 
 # Each simulated node runs in its own process. These caches make sure each
 # process loads the dataset and computes the split only once.
@@ -33,7 +42,9 @@ def load_dataset(name, data_dir, download=False):
     if cache_key in _dataset_cache:
         return _dataset_cache[cache_key]
 
-    if name == "cifar10":
+    if name == "edgeiiot":
+        train_set, test_set = _load_edgeiiot(data_dir)
+    elif name == "cifar10":
         train_set, test_set = _load_cifar10(data_dir, download)
     elif name == "synthetic":
         train_set, test_set = _make_synthetic()
@@ -42,6 +53,52 @@ def load_dataset(name, data_dir, download=False):
 
     _dataset_cache[cache_key] = (train_set, test_set)
     return train_set, test_set
+
+
+class ArrayDataset:
+    """A dataset kept as two numpy arrays: X (inputs) and y (labels).
+
+    The arrays are MEMORY-MAPPED: the file stays on disk and the operating system
+    keeps one shared copy in RAM, so 10 worker processes do not each load 650 MB.
+    """
+
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+
+    def __len__(self):
+        return len(self.y)
+
+
+def _load_edgeiiot(data_dir):
+    """Edge-IIoTset, as prepared by scripts/prepare_edgeiiot.py."""
+    if not os.path.exists(os.path.join(data_dir, "X_train.npy")):
+        raise FileNotFoundError(
+            f"No prepared data in {data_dir}. Run scripts/prepare_edgeiiot.py first."
+        )
+    train_set = ArrayDataset(
+        np.load(os.path.join(data_dir, "X_train.npy"), mmap_mode="r"),
+        np.load(os.path.join(data_dir, "y_train.npy")),
+    )
+    test_set = ArrayDataset(
+        np.load(os.path.join(data_dir, "X_test.npy"), mmap_mode="r"),
+        np.load(os.path.join(data_dir, "y_test.npy")),
+    )
+    return train_set, test_set
+
+
+def get_dataset_info(config):
+    """How many input features and classes the dataset has (the model needs both)."""
+    data_cfg = config["data"]
+    if data_cfg["dataset"] == "edgeiiot":
+        with open(os.path.join(data_cfg["data_dir"], "meta.json")) as f:
+            meta = json.load(f)
+        return {
+            "num_features": len(meta["feature_names"]),
+            "num_classes": len(meta["class_names"]),
+            "class_names": meta["class_names"],
+        }
+    return {"num_features": None, "num_classes": NUM_CLASSES, "class_names": None}
 
 
 def _load_cifar10(data_dir, download):
@@ -78,6 +135,8 @@ def _make_synthetic(num_train=2000, num_test=500):
 
 def get_labels(dataset):
     """Return the label of every sample as a numpy array."""
+    if isinstance(dataset, ArrayDataset):    # Edge-IIoTset
+        return np.asarray(dataset.y)
     if hasattr(dataset, "targets"):          # torchvision datasets
         return np.array(dataset.targets)
     return dataset.tensors[1].numpy()        # TensorDataset (synthetic)
@@ -94,11 +153,12 @@ def dirichlet_split(labels, num_nodes, alpha, seed, min_samples_per_node=10):
     If some node ends up with too few samples, we simply draw again.
     """
     rng = np.random.default_rng(seed)
+    num_classes = int(labels.max()) + 1     # 10 for CIFAR-10, 15 for Edge-IIoTset
 
     for _attempt in range(1000):
         node_indices = [[] for _ in range(num_nodes)]
 
-        for class_id in range(NUM_CLASSES):
+        for class_id in range(num_classes):
             # All samples of this class, in random order.
             class_indices = np.where(labels == class_id)[0]
             rng.shuffle(class_indices)
@@ -149,16 +209,30 @@ def get_node_loader(config, partition_id):
     """Training data loader for one fog node."""
     train_set, _ = load_dataset(config["data"]["dataset"], config["data"]["data_dir"])
     node_indices = get_node_split(config)[partition_id]
-    return DataLoader(
-        Subset(train_set, node_indices),
-        batch_size=config["training"]["batch_size"],
-        shuffle=True,
-    )
+
+    if isinstance(train_set, ArrayDataset):
+        # Copy just this node's rows out of the shared file into a small tensor
+        # dataset (e.g. 70,000 rows x 90 features = about 25 MB).
+        node_indices = np.sort(node_indices)            # reading in order is faster
+        node_set = TensorDataset(
+            torch.from_numpy(np.asarray(train_set.X[node_indices])),
+            torch.from_numpy(np.asarray(train_set.y[node_indices])),
+        )
+    else:
+        node_set = Subset(train_set, node_indices)
+
+    return DataLoader(node_set, batch_size=config["training"]["batch_size"], shuffle=True)
 
 
 def get_test_loader(config, batch_size=256):
     """Test data loader, used by the coordinator to measure global accuracy."""
     _, test_set = load_dataset(config["data"]["dataset"], config["data"]["data_dir"])
+    if isinstance(test_set, ArrayDataset):
+        # The coordinator tests on the whole test set every round, so load it into RAM once.
+        test_set = TensorDataset(
+            torch.from_numpy(np.array(test_set.X)),
+            torch.from_numpy(np.array(test_set.y)),
+        )
     return DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
 
@@ -166,7 +240,8 @@ def describe_split(config):
     """Count how many samples of each class every node has (for reports and checks)."""
     train_set, _ = load_dataset(config["data"]["dataset"], config["data"]["data_dir"])
     labels = get_labels(train_set)
+    num_classes = int(labels.max()) + 1
     counts = []
     for indices in get_node_split(config):
-        counts.append(np.bincount(labels[indices], minlength=NUM_CLASSES).tolist())
+        counts.append(np.bincount(labels[indices], minlength=num_classes).tolist())
     return counts

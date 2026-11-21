@@ -17,12 +17,31 @@ Selection, scoring and aggregation are **separate, swappable functions**, so eve
 ## Setup
 
 ```bash
-conda create -n replfl python=3.11 -y
+conda create -n replfl -c conda-forge --override-channels python=3.13 -y   # 3.11-3.13 work; tested on 3.13
 conda activate replfl
 pip install -r requirements.txt
 pip install -e .          # makes `bcfl` importable from scripts and tests
 pytest                    # unit tests
 ```
+
+## Edge-IIoTset (Week 1 onwards)
+
+The main dataset is **Edge-IIoTset** (Ferrag et al., IEEE Access 2022): network traffic from an IoT/edge/fog testbed, labelled as Normal or one of 14 attacks.
+
+1. Download it from Kaggle ("Edge-IIoTset Cyber Security Dataset of IoT & IIoT") and copy
+   `Edge-IIoTset dataset/Selected dataset for ML and DL/DNN-EdgeIIoT-dataset.csv` into `data/`.
+2. Prepare it **once**. This drops leaky columns (timestamps, IPs, ports, raw payloads, `udp.stream`), removes duplicates, one-hot encodes the text columns, makes a stratified 80/20 split, scales using the training data only, and saves `float32` `.npy` files that every simulated node memory-maps:
+   ```bash
+   python scripts/prepare_edgeiiot.py --csv data/DNN-EdgeIIoT-dataset.csv --out data/edgeiiot
+   ```
+   Result: 1,799,638 rows after deduplication, 90 features, 15 classes (about 76% Normal).
+3. Run:
+   ```bash
+   python scripts/run.py --config configs/edgeiiot_baseline.yaml      # one run
+   bash scripts/run_edgeiiot_baseline.sh                              # alpha 0.1/0.5/100 x 3 seeds + plots
+   ```
+
+Each Edge-IIoTset run also writes `confusion.jsonl` (the test confusion table per round), used to compute attack success rates. Because the data is about 76% Normal, **report macro-F1 alongside accuracy**: a model that always answers "Normal" gets about 76% accuracy but a macro-F1 of about 0.06.
 
 ## Running experiments
 

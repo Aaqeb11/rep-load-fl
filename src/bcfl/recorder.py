@@ -1,8 +1,13 @@
 """Save what happened in every round to CSV files.
 
 rounds.csv - one row per round:
-    round, test_accuracy, test_loss, train_loss, selected_nodes,
+    round, test_accuracy, test_loss, test_macro_f1, train_loss, selected_nodes,
     max_train_seconds, round_seconds
+
+confusion.jsonl - one line per round: the test confusion table
+    (rows = true class, columns = predicted class). Kept so that attack success
+    rates (e.g. "how many DDoS rows were called Normal?") can be computed later
+    without rerunning anything.
 
 node_rounds.csv - one row per node that trained, per round:
     round, partition_id, num_examples, train_loss, train_seconds, train_cpu_seconds
@@ -24,7 +29,7 @@ import os
 import time
 
 ROUND_COLUMNS = [
-    "round", "test_accuracy", "test_loss", "train_loss", "selected_nodes",
+    "round", "test_accuracy", "test_loss", "test_macro_f1", "train_loss", "selected_nodes",
     "max_train_seconds", "round_seconds",
 ]
 NODE_COLUMNS = [
@@ -39,6 +44,9 @@ class RoundRecorder:
         self.csv_path = os.path.join(output_dir, "rounds.csv")
         with open(self.csv_path, "w", newline="") as f:
             csv.writer(f).writerow(ROUND_COLUMNS)
+
+        self.confusion_path = os.path.join(output_dir, "confusion.jsonl")
+        open(self.confusion_path, "w").close()      # start with an empty file
 
         self.node_csv_path = os.path.join(output_dir, "node_rounds.csv")
         with open(self.node_csv_path, "w", newline="") as f:
@@ -74,13 +82,17 @@ class RoundRecorder:
         # The slowest node decides how long the round takes (the straggler).
         self.max_train_seconds = max(update.train_seconds for update in updates)
 
-    def record_test(self, server_round, accuracy, loss):
-        """Called after the global model is tested; writes the full round row."""
+    def record_test(self, server_round, result):
+        """Called after the global model is tested; writes the full round row.
+
+        `result` is the dictionary returned by model.test().
+        """
         seconds = time.time() - self.round_started_at if server_round > 0 else 0.0
         row = [
             server_round,
-            round(accuracy, 4),
-            round(loss, 4),
+            round(result["accuracy"], 4),
+            round(result["loss"], 4),
+            round(result["macro_f1"], 4),
             "" if self.train_loss is None else round(self.train_loss, 4),
             json.dumps(self.selected_partitions),
             "" if self.max_train_seconds is None else round(self.max_train_seconds, 3),
@@ -88,4 +100,10 @@ class RoundRecorder:
         ]
         with open(self.csv_path, "a", newline="") as f:
             csv.writer(f).writerow(row)
-        print(f"[round {server_round:>3}] test accuracy = {accuracy:.4f}  test loss = {loss:.4f}")
+
+        with open(self.confusion_path, "a") as f:
+            line = {"round": server_round, "confusion": result["confusion"].tolist()}
+            f.write(json.dumps(line) + "\n")
+
+        print(f"[round {server_round:>3}] test accuracy = {result['accuracy']:.4f}  "
+              f"macro-F1 = {result['macro_f1']:.4f}  test loss = {result['loss']:.4f}")

@@ -5,7 +5,7 @@ from flwr.app import ArrayRecord, Context, MetricRecord
 from flwr.serverapp import Grid, ServerApp
 
 from bcfl.data import get_test_loader
-from bcfl.model import SimpleCNN, get_device, test
+from bcfl.model import build_model, get_device, test
 from bcfl.strategy import RepLoadStrategy
 
 
@@ -15,7 +15,7 @@ def build_server_app(config, recorder):
     @app.main()
     def main(grid: Grid, context: Context) -> None:
         torch.manual_seed(config["seed"])
-        initial_model = SimpleCNN()
+        initial_model = build_model(config)
 
         strategy = RepLoadStrategy(config, recorder)
         test_loader = get_test_loader(config)
@@ -23,11 +23,15 @@ def build_server_app(config, recorder):
 
         def evaluate_global_model(server_round, arrays):
             """Test the combined model on the held-out test set after every round."""
-            model = SimpleCNN()
+            model = build_model(config)
             model.load_state_dict(arrays.to_torch_state_dict())
-            accuracy, loss = test(model, test_loader, device)
-            recorder.record_test(server_round, accuracy, loss)
-            return MetricRecord({"accuracy": accuracy, "loss": loss})
+            result = test(model, test_loader, device)
+            recorder.record_test(server_round, result)
+            return MetricRecord({
+                "accuracy": result["accuracy"],
+                "loss": result["loss"],
+                "macro-f1": result["macro_f1"],
+            })
 
         strategy.start(
             grid=grid,

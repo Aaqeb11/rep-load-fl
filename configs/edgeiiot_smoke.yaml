@@ -1,0 +1,34 @@
+# Quick check on the 5% Edge-IIoTset sample: a few nodes, a few rounds.
+# Prepare the sample first:
+#   python scripts/prepare_edgeiiot.py --csv data/edge_sample_5pct.csv --out data/edgeiiot_sample
+
+run_name: edgeiiot_smoke
+
+data:
+  dataset: edgeiiot
+  data_dir: ./data/edgeiiot_sample
+  alpha: 0.5
+  min_samples_per_node: 50
+
+model: mlp
+
+federation:
+  num_nodes: 5
+  nodes_per_round: 3
+  num_rounds: 3
+
+training:
+  local_epochs: 1
+  batch_size: 256
+  learning_rate: 0.01
+  device: cpu
+
+methods:
+  selection: random
+  scoring: none
+  aggregation: fedavg
+
+simulation:
+  cpus_per_node: 1
+
+seed: 0
