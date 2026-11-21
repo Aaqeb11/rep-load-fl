@@ -15,7 +15,7 @@ from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
 from bcfl.data import get_node_loader
-from bcfl.model import SimpleCNN, get_device, train
+from bcfl.model import build_model, get_device, train
 
 
 def build_client_app(config):
@@ -32,7 +32,7 @@ def build_client_app(config):
         partition_id = int(context.node_config["partition-id"])
 
         # 1. Load the global model sent by the coordinator.
-        model = SimpleCNN()
+        model = build_model(config)
         model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
 
         # 2. Train it on this node's own data, timing how long it takes.
