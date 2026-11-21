@@ -32,3 +32,13 @@ simulation:
   cpus_per_node: 1
 
 seed: 0
+
+attack:
+  type: none                   # none | label_flip | scaling | free_rider | on_off
+  fraction: 0.2
+  source_class: Backdoor
+  target_class: Normal
+  scale: -1.0
+  honest_rounds: 10
+  attack_rounds: 5
+  noise_std: 0.0
