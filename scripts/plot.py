@@ -34,6 +34,8 @@ def main():
     parser = argparse.ArgumentParser(description="Plot accuracy curves.")
     parser.add_argument("run_dirs", nargs="+", help="Result folders containing rounds.csv")
     parser.add_argument("--output", default="results/accuracy.png")
+    parser.add_argument("--metric", default="test_accuracy",
+                        help="Column of rounds.csv to plot, e.g. test_accuracy or test_macro_f1")
     args = parser.parse_args()
 
     # Collect the accuracy column of every run, grouped by run name without seed.
@@ -43,7 +45,7 @@ def main():
         if not os.path.exists(csv_path):
             print(f"Skipping {run_dir}: no rounds.csv")
             continue
-        rounds = pd.read_csv(csv_path).set_index("round")["test_accuracy"]
+        rounds = pd.read_csv(csv_path).set_index("round")[args.metric]
         groups.setdefault(group_name(run_dir), []).append(rounds)
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
@@ -55,8 +57,8 @@ def main():
             ax.fill_between(mean.index, table.min(axis=1), table.max(axis=1), alpha=0.2)
 
     ax.set_xlabel("Round")
-    ax.set_ylabel("Test accuracy")
-    ax.set_title("Test accuracy per round\n(line = mean over seeds, band = min to max)", fontsize=10)
+    ax.set_ylabel(args.metric.replace("_", " ").replace("test ", "Test "))
+    ax.set_title(f"{args.metric} per round\n(line = mean over seeds, band = min to max)", fontsize=10)
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()

@@ -1,0 +1,46 @@
+# Week 1 baseline: FedAvg on Edge-IIoTset (network intrusion detection, 15 classes).
+# Prepare the data once first:
+#   python scripts/prepare_edgeiiot.py --csv data/DNN-EdgeIIoT-dataset.csv --out data/edgeiiot
+
+run_name: edgeiiot_baseline
+
+data:
+  dataset: edgeiiot
+  data_dir: ./data/edgeiiot   # output folder of prepare_edgeiiot.py
+  alpha: 0.5                  # Dirichlet alpha: smaller = more uneven (non-IID) data
+  min_samples_per_node: 100
+
+model: mlp                    # small fully connected network (90 features -> 15 classes)
+
+federation:
+  num_nodes: 20
+  nodes_per_round: 10
+  num_rounds: 100
+
+training:
+  local_epochs: 1
+  batch_size: 256             # rows are small, so bigger batches than for images
+  learning_rate: 0.01
+  device: cpu
+
+methods:
+  selection: random
+  scoring: none
+  aggregation: fedavg          # fedavg | krum | trimmed_mean
+  assumed_malicious_fraction: 0.2   # what Krum / trimmed mean are told to expect
+                                    # (the true fraction, also used in no-attack runs)
+
+attack:
+  type: none                   # none | label_flip | scaling | free_rider | on_off
+  fraction: 0.2                # share of fog nodes that are malicious (4 of 20)
+  source_class: Backdoor       # label_flip: this attack class is relabelled as...
+  target_class: Normal         #             ...Normal
+  scale: -1.0                  # scaling / on_off: sent = global + scale * (local - global)
+  honest_rounds: 10            # on_off: honest for 10 rounds,
+  attack_rounds: 5             #         then attacking for 5, repeated
+  noise_std: 0.0               # free_rider: 0 = return the global model unchanged
+
+simulation:
+  cpus_per_node: 1
+
+seed: 0
