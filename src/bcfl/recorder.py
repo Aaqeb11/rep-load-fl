@@ -10,7 +10,11 @@ confusion.jsonl - one line per round: the test confusion table
     without rerunning anything.
 
 node_rounds.csv - one row per node that trained, per round:
-    round, partition_id, num_examples, train_loss, train_seconds, train_cpu_seconds
+    round, partition_id, num_examples, train_loss, train_seconds, train_cpu_seconds,
+    is_malicious, attacking, influence
+
+    is_malicious / attacking are ground truth for evaluation (1 = yes).
+    influence is the node's share of the new global model (0 = filtered out).
 
 The per-node file is what Step 3 uses to measure how much CPU time training
 takes away from each fog node's real-time tasks.
@@ -34,6 +38,7 @@ ROUND_COLUMNS = [
 ]
 NODE_COLUMNS = [
     "round", "partition_id", "num_examples", "train_loss", "train_seconds", "train_cpu_seconds",
+    "is_malicious", "attacking", "influence",
 ]
 
 
@@ -61,8 +66,12 @@ class RoundRecorder:
     def start_round(self):
         self.round_started_at = time.time()
 
-    def record_training(self, server_round, updates):
-        """Called once per round with the NodeUpdate of every node that trained."""
+    def record_training(self, server_round, updates, influence=None):
+        """Called once per round with the NodeUpdate of every node that trained.
+
+        influence: {node_id: share of the new model} from the aggregator.
+        """
+        influence = influence or {}
         # One row per node goes straight into node_rounds.csv.
         with open(self.node_csv_path, "a", newline="") as f:
             writer = csv.writer(f)
@@ -74,6 +83,9 @@ class RoundRecorder:
                     round(update.train_loss, 4),
                     round(update.train_seconds, 3),
                     round(update.train_cpu_seconds, 3),
+                    int(update.is_malicious),
+                    int(update.attacking),
+                    round(influence.get(update.node_id, 0.0), 4),
                 ])
 
         # The round summary is kept until the test result arrives.

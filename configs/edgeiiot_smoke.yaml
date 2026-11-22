@@ -26,7 +26,19 @@ training:
 methods:
   selection: random
   scoring: none
-  aggregation: fedavg
+  aggregation: fedavg          # fedavg | krum | trimmed_mean
+  assumed_malicious_fraction: 0.2   # what Krum / trimmed mean are told to expect
+                                    # (the true fraction, also used in no-attack runs)
+
+attack:
+  type: none                   # none | label_flip | scaling | free_rider | on_off
+  fraction: 0.2                # share of fog nodes that are malicious (4 of 20)
+  source_class: Backdoor       # label_flip: this attack class is relabelled as...
+  target_class: Normal         #             ...Normal
+  scale: -1.0                  # scaling / on_off: sent = global + scale * (local - global)
+  honest_rounds: 10            # on_off: honest for 10 rounds,
+  attack_rounds: 5             #         then attacking for 5, repeated
+  noise_std: 0.0               # free_rider: 0 = return the global model unchanged
 
 simulation:
   cpus_per_node: 1

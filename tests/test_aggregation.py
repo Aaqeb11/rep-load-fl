@@ -15,13 +15,13 @@ def test_fedavg_weights_by_number_of_examples():
     # Node A (value 0) has 100 samples, node B (value 10) has 300.
     # Expected average: 0 * 0.25 + 10 * 0.75 = 7.5
     updates = [make_update(1, 0.0, 100), make_update(2, 10.0, 300)]
-    result = fedavg(updates, scores={1: 1.0, 2: 1.0})
+    result, influence = fedavg(updates, scores={1: 1.0, 2: 1.0})
     assert torch.allclose(result["layer"], torch.full((2, 2), 7.5))
 
 
 def test_fedavg_of_identical_models_is_unchanged():
     updates = [make_update(i, 3.0, 50) for i in range(5)]
-    result = fedavg(updates, scores={})
+    result, influence = fedavg(updates, scores={})
     assert torch.allclose(result["layer"], torch.full((2, 2), 3.0))
 
 
