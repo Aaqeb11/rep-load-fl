@@ -8,8 +8,9 @@ for aggregation in fedavg krum trimmed_mean; do
   for attack in none label_flip scaling free_rider on_off; do
     for seed in 0 1 2; do
       name="week1_${attack}_${aggregation}"
+      # A finished 100-round run has 102 lines: header + round 0 (untrained model) + rounds 1-100.
       if [ -f "results/${name}_alpha0.5_seed${seed}/rounds.csv" ] && \
-         [ "$(wc -l < "results/${name}_alpha0.5_seed${seed}/rounds.csv")" -gt 100 ]; then
+         [ "$(wc -l < "results/${name}_alpha0.5_seed${seed}/rounds.csv")" -ge 102 ]; then
         echo "=== skip ${name} seed=${seed} (already done) ==="
         continue
       fi
