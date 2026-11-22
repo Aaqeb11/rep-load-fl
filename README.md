@@ -242,6 +242,9 @@ bash scripts/run_edgeiiot_baseline.sh
 # (long: run it overnight; finished runs are skipped if restarted)
 nohup bash scripts/run_week1_attacks.sh > week1_attacks.log 2>&1 &
 
+# Turn the 45 runs into tables (summary.md, runs.csv) and charts in results/week1_summary/
+python scripts/summarise_week1.py
+
 # Plot any set of runs (seeds averaged; shaded band = min to max)
 python scripts/plot.py results/edgeiiot_baseline_alpha0.5_seed* --metric test_macro_f1 \
   --output results/alpha05_macro_f1.png
