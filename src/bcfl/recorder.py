@@ -16,6 +16,13 @@ node_rounds.csv - one row per node that trained, per round:
     is_malicious / attacking are ground truth for evaluation (1 = yes).
     influence is the node's share of the new global model (0 = filtered out).
 
+workload.csv - only with the real-time workload model on: one row per node (all
+    nodes, selected or not) per round: its load, speed, slack, simulated training
+    time, whether training was on time, and its real-time jobs and misses (with
+    and without training). rounds.csv then also gets deadline_miss_rate (all
+    nodes), deadline_miss_rate_without_fl (same jobs, no training anywhere) and
+    late_updates (selected nodes whose training missed the round window).
+
 The per-node file is what Step 3 uses to measure how much CPU time training
 takes away from each fog node's real-time tasks.
 
@@ -35,10 +42,15 @@ import time
 ROUND_COLUMNS = [
     "round", "test_accuracy", "test_loss", "test_macro_f1", "train_loss", "selected_nodes",
     "max_train_seconds", "round_seconds",
+    "deadline_miss_rate", "deadline_miss_rate_without_fl", "late_updates",
 ]
 NODE_COLUMNS = [
     "round", "partition_id", "num_examples", "train_loss", "train_seconds", "train_cpu_seconds",
-    "is_malicious", "attacking", "influence",
+    "is_malicious", "attacking", "influence", "on_time", "slack_s",
+]
+WORKLOAD_COLUMNS = [
+    "round", "partition_id", "selected", "busy", "load", "mips", "slack_s", "training_s",
+    "training_on_time", "rt_jobs", "rt_missed", "rt_missed_without_training",
 ]
 
 
@@ -57,11 +69,14 @@ class RoundRecorder:
         with open(self.node_csv_path, "w", newline="") as f:
             csv.writer(f).writerow(NODE_COLUMNS)
 
+        self.workload_path = os.path.join(output_dir, "workload.csv")   # created on first use
+
         # Filled in during training, written out when the round's test result arrives.
         self.round_started_at = time.time()
         self.train_loss = None
         self.selected_partitions = []
         self.max_train_seconds = None
+        self.workload_summary = None
 
     def start_round(self):
         self.round_started_at = time.time()
@@ -86,6 +101,8 @@ class RoundRecorder:
                     int(update.is_malicious),
                     int(update.attacking),
                     round(influence.get(update.node_id, 0.0), 4),
+                    int(update.on_time),
+                    "" if update.slack is None else round(update.slack, 2),
                 ])
 
         # The round summary is kept until the test result arrives.
@@ -93,6 +110,26 @@ class RoundRecorder:
         self.train_loss = sum(update.train_loss for update in updates) / len(updates)
         # The slowest node decides how long the round takes (the straggler).
         self.max_train_seconds = max(update.train_seconds for update in updates)
+
+    def record_workload(self, server_round, rows):
+        """Called once per round (workload model on) with one row per node."""
+        new_file = not os.path.exists(self.workload_path)
+        with open(self.workload_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=WORKLOAD_COLUMNS)
+            if new_file:
+                writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+
+        jobs = sum(row["rt_jobs"] for row in rows)
+        missed = sum(row["rt_missed"] for row in rows)
+        missed_without = sum(row["rt_missed_without_training"] for row in rows)
+        late = sum(1 for row in rows if row["selected"] and row["training_on_time"] == 0)
+        self.workload_summary = {
+            "deadline_miss_rate": missed / jobs if jobs else 0.0,
+            "deadline_miss_rate_without_fl": missed_without / jobs if jobs else 0.0,
+            "late_updates": late,
+        }
 
     def record_test(self, server_round, result):
         """Called after the global model is tested; writes the full round row.
@@ -110,6 +147,12 @@ class RoundRecorder:
             "" if self.max_train_seconds is None else round(self.max_train_seconds, 3),
             round(seconds, 2),
         ]
+        if self.workload_summary is None or server_round == 0:
+            row += ["", "", ""]
+        else:
+            row += [round(self.workload_summary["deadline_miss_rate"], 5),
+                    round(self.workload_summary["deadline_miss_rate_without_fl"], 5),
+                    self.workload_summary["late_updates"]]
         with open(self.csv_path, "a", newline="") as f:
             csv.writer(f).writerow(row)
 
@@ -117,5 +160,9 @@ class RoundRecorder:
             line = {"round": server_round, "confusion": result["confusion"].tolist()}
             f.write(json.dumps(line) + "\n")
 
-        print(f"[round {server_round:>3}] test accuracy = {result['accuracy']:.4f}  "
-              f"macro-F1 = {result['macro_f1']:.4f}  test loss = {result['loss']:.4f}")
+        message = (f"[round {server_round:>3}] test accuracy = {result['accuracy']:.4f}  "
+                   f"macro-F1 = {result['macro_f1']:.4f}  test loss = {result['loss']:.4f}")
+        if self.workload_summary is not None and server_round > 0:
+            message += (f"  deadline misses = {self.workload_summary['deadline_miss_rate']:.2%}"
+                        f"  late updates = {self.workload_summary['late_updates']}")
+        print(message)
