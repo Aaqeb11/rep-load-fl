@@ -122,7 +122,7 @@ each comparison is fair.
 
 | Module | Job | Available now |
 |---|---|---|
-| `src/bcfl/selection.py` | Choose which fog nodes train this round | `random` |
+| `src/bcfl/selection.py` | Choose which fog nodes train this round | `random`, `slack` (load-aware) |
 | `src/bcfl/scoring.py` | Turn each node's behaviour into a trust score | `none` (everyone 1.0) |
 | `src/bcfl/aggregation.py` | Combine the updates; report each node's influence | `fedavg`, `krum`, `trimmed_mean` |
 
@@ -153,10 +153,11 @@ each comparison is fair.
   macro-F1 and confusion tables (PR #4).
 - [x] **Week 1, attacks and defences:** label flip, scaling, free-riding,
   on-off; Krum and trimmed mean; per-node influence logging (PR #5).
-- [ ] **Week 1, experiments:** the 45-run attack × defence grid
-  (`scripts/run_week1_attacks.sh`) and the results tables.
-- [ ] **Week 2, workload model:** real-time task queues with deadlines (RTH²S
-  parameters), training competing for CPU, deadline-miss rate.
+- [x] **Week 1, experiments:** the 45-run attack × defence grid
+  (`scripts/run_week1_attacks.sh`) and the results tables (`scripts/summarise_week1.py`, PR #7).
+- [x] **Week 2, workload model:** real-time jobs with deadlines (RTH²S
+  parameters), training competing for CPU (fair share or EDF), deadline-miss rate,
+  late updates dropped, slack-aware selection.
 - [ ] **Week 2, reputation:** reputation scoring, reputation + slack
   selection, reputation-weighted aggregation (RQ1, RQ2).
 - [ ] **Blockchain:** Fabric anchoring of reputations and peer verification
@@ -256,7 +257,10 @@ python scripts/plot.py results/edgeiiot_baseline_alpha0.5_seed* --metric test_ma
 |---|---|---|
 | `data.alpha` | 0.1, 0.5, 100 | non-IID strength: smaller = more uneven |
 | `federation.num_nodes` / `nodes_per_round` / `num_rounds` | 20 / 10 / 100 | size of the federation and length of the run |
+| `methods.selection` | `random`, `slack` | who trains: at random, or only nodes whose training fits their spare CPU |
 | `methods.aggregation` | `fedavg`, `krum`, `trimmed_mean` | how updates are combined |
+| `workload.enabled` | `false` / `true` | simulate each fog node's real-time jobs (RTH²S parameters) and count deadline misses |
+| `workload.training_policy` | `fair_share`, `edf` | training shares the CPU like an ordinary process, or runs as an EDF job due at the round's end |
 | `methods.assumed_malicious_fraction` | 0.2 | attackers Krum and trimmed mean are told to expect (→ f = k = 2) |
 | `attack.type` | `none`, `label_flip`, `scaling`, `free_rider`, `on_off` | what the malicious nodes do |
 | `attack.fraction` | 0.2 | share of nodes that are malicious (4 of 20) |
@@ -273,7 +277,8 @@ Each run writes to `results/<run_name>_alpha<α>_seed<s>/` (git-ignored):
 | `config.yaml` | The exact settings used |
 | `split.json` | How many rows of each class every node holds |
 | `rounds.csv` | Per round: test accuracy, loss and macro-F1, average training loss, selected nodes, slowest node's training time, round time |
-| `node_rounds.csv` | Per node per round: rows used, training loss, wall-clock and CPU training time, `is_malicious`, `attacking`, `influence` |
+| `node_rounds.csv` | Per node per round: rows used, training loss, wall-clock and CPU training time, `is_malicious`, `attacking`, `influence`, `on_time`, `slack_s` |
+| `workload.csv` | With the workload on: per node (selected or not) per round: busy or normal, load, speed, slack, simulated training time, real-time jobs and misses with and without training. `rounds.csv` then also has `deadline_miss_rate`, `deadline_miss_rate_without_fl` and `late_updates` |
 | `confusion.jsonl` | The test confusion table per round, used for attack success rates (e.g. Backdoor rows predicted as Normal) |
 
 On an Apple Silicon Mac you can try `--set training.device=mps`. If it is
@@ -291,6 +296,7 @@ src/bcfl/
   scoring.py       SCORE step (registry: none)
   aggregation.py   AGGREGATE step (registry: fedavg, krum, trimmed_mean) + influence
   attacks.py       malicious nodes: who, when, and the four attacks
+  workload.py      real-time jobs per fog node, EDF / fair-share CPU simulation, slack
   strategy.py      RepLoadStrategy: our Flower strategy calling the three steps
   client_app.py    the fog-node program (trains, or attacks)
   server_app.py    the coordinator program (runs rounds, tests the global model)

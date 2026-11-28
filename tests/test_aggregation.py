@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from bcfl.aggregation import NodeUpdate, fedavg
-from bcfl.selection import random_selection
+from bcfl.selection import random_selection, slack_selection
 
 
 def make_update(node_id, value, num_examples):
@@ -38,3 +38,19 @@ def test_random_selection_keeps_huge_node_ids_exact():
     huge_ids = [17692838096047403008, 16775115643702890496, 4098738847234375680]
     chosen = random_selection(huge_ids, num_to_pick=3, rng=np.random.default_rng(0), context={})
     assert sorted(chosen) == sorted(huge_ids)
+
+
+def test_slack_selection_only_picks_nodes_that_fit():
+    slack = {1: 5.0, 2: -3.0, 3: 12.0, 4: 0.0, 5: -1.0}
+    for seed in range(20):
+        chosen = slack_selection(list(slack), num_to_pick=3, rng=np.random.default_rng(seed),
+                                 context={"slack": slack})
+        assert sorted(chosen) == [1, 3, 4]
+
+
+def test_slack_selection_fills_up_with_the_most_slack():
+    # Only node 3 fits; then the least negative ones (5, then 2).
+    slack = {1: -9.0, 2: -3.0, 3: 12.0, 4: -7.0, 5: -1.0}
+    chosen = slack_selection(list(slack), num_to_pick=3, rng=np.random.default_rng(0),
+                             context={"slack": slack})
+    assert chosen == [3, 5, 2]

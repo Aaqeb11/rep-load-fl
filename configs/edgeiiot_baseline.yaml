@@ -24,7 +24,7 @@ training:
   device: cpu
 
 methods:
-  selection: random
+  selection: random           # random | slack
   scoring: none
   aggregation: fedavg          # fedavg | krum | trimmed_mean
   assumed_malicious_fraction: 0.2   # what Krum / trimmed mean are told to expect
@@ -39,6 +39,23 @@ attack:
   honest_rounds: 10            # on_off: honest for 10 rounds,
   attack_rounds: 5             #         then attacking for 5, repeated
   noise_std: 0.0               # free_rider: 0 = return the global model unchanged
+
+workload:                      # real-time workload model (src/bcfl/workload.py). RTH2S = Kaur et al. 2023
+  enabled: false               # true = simulate each fog node's real-time jobs every round
+  training_policy: fair_share  # fair_share (training is an ordinary process) | edf (training is an EDF job)
+  round_window_s: 60.0         # one FL round; training not done by then is too late
+  mips: [1000, 2000]           # RTH2S tier-1 fog node speed
+  small_job_mi: [155, 250]     # RTH2S Table 2 (sensing)
+  medium_job_mi: [1850, 3000]  # RTH2S Table 2 (control, object recognition)
+  small_job_share: 0.55        # RTH2S mix 41:34 (its large jobs run on higher tiers)
+  small_deadline_s: [0.25, 2.0]    # inside RTH2S's 250 ms - 10 s
+  medium_deadline_s: [4.0, 10.0]   # inside RTH2S's 250 ms - 10 s
+  deadline_factor: 1.0         # RTH2S DF: deadlines divided by this (1-5)
+  normal_load: [0.2, 0.5]      # share of CPU real-time jobs need in a normal round
+  busy_load: [0.8, 0.95]       # ... and in a busy round
+  p_normal_to_busy: 0.2        # chance per round of becoming busy
+  p_busy_to_normal: 0.5        # chance per round of calming down (=> about 29% busy rounds)
+  ops_per_weight_per_row: 6    # training cost: forward + backward pass
 
 simulation:
   cpus_per_node: 1

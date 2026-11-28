@@ -22,7 +22,7 @@ from bcfl.attacks import (
     is_attacking_this_round,
     scale_update,
 )
-from bcfl.data import get_dataset_info, get_node_loader
+from bcfl.data import get_dataset_info, get_node_loader, get_node_split
 from bcfl.model import build_model, get_device, train
 
 
@@ -108,6 +108,19 @@ def build_client_app(config):
                 "attacking": int(attacking),
             }),
         })
+        return Message(content=reply, reply_to=msg)
+
+    @app.query()
+    def handle_query(msg: Message, context: Context) -> Message:
+        """Tell the coordinator who this node is, once at the start: which slice of
+        the data it holds and how many training rows that is. The coordinator needs
+        this to estimate each node's training cost before choosing who trains."""
+        partition_id = int(context.node_config["partition-id"])
+        num_examples = len(get_node_split(config)[partition_id])
+        reply = RecordDict({"metrics": MetricRecord({
+            "partition-id": partition_id,
+            "num-examples": num_examples,
+        })})
         return Message(content=reply, reply_to=msg)
 
     return app

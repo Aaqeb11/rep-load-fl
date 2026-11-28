@@ -42,6 +42,9 @@ class NodeUpdate:
     # Ground truth, for evaluation only (the methods never look at these):
     is_malicious: bool = False       # is this one of the attacker nodes?
     attacking: bool = False          # did it actually attack this round?
+    # Real-time workload (only when the workload model is on):
+    on_time: bool = True             # did training finish within the round window?
+    slack: float = None              # the node's slack (seconds) when it was selected
 
 
 def fedavg(updates, scores, settings=None):
